@@ -23,5 +23,20 @@ optimizer.SetGradientMagnitudeTolerance(1e-4)  # Tolérance sur le gradient
 
 ## 3) Segmentation des tumeurs
 
+### Algorithme
+- **Méthode Principale** : Croissance des régions
+- **Post-traitement** : Opérations morphologiques
+
+
+### Paramètres Clés
+```python
+segmenter.SetMultiplier(2.0)               # Contrôle la déviation d'intensité
+segmenter.SetNumberOfIterations(5)         # Itérations de croissance
+segmenter.SetInitialNeighborhoodRadius(3)  # Taille de région initiale
+segmenter.SetReplaceValue(1)              # Valeur de sortie pour la région segmentée
+
+# Traitement morphologique :
+rayon = 1  # Taille de l'élément structurant
 ## 4) Analyse et visualisation des changements
+```
 
