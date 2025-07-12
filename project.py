@@ -139,17 +139,59 @@ def get_transform_from_file(file_name: str) -> TransformType:
     
     return register_transform
 
-def tumor_segmentation(image: ImageType, seed: tuple) -> ImageType:
-    segmentation = itk.confidence_connected_image_filter(
-            image,
-            seed=seed,
-            multiplier=2.5,
-            number_of_iterations=5,
-            initial_neighborhood_radius=1,
-            replace_value=1
-        )
-    return segmentation
+def tumor_segmentation(image: ImageType, seeds: list[tuple]) -> ImageType:
+    
+    BinaryType = itk.Image[itk.UC, 3]
+    thresh_filter = itk.BinaryThresholdImageFilter[ImageType, BinaryType].New()
+    thresh_filter.SetInput(image)
+    thresh_filter.SetLowerThreshold(1.0)
+    thresh_filter.SetUpperThreshold(99999.0)  # max float
+    thresh_filter.SetInsideValue(1)
+    thresh_filter.SetOutsideValue(0)
+    thresh_filter.Update()
 
+    mask = thresh_filter.GetOutput()
+
+    corrector = itk.N4BiasFieldCorrectionImageFilter[ImageType, BinaryType, ImageType].New()
+    corrector.SetInput(image)
+    corrector.SetMaskImage(mask)
+    corrector.Update()
+    corrected = corrector.GetOutput()
+
+    smoothed = itk.curvature_flow_image_filter(corrected, time_step=0.125, number_of_iterations=5)
+
+    rescaler = itk.RescaleIntensityImageFilter[ImageType, ImageType].New()
+    rescaler.SetInput(smoothed)
+    rescaler.SetOutputMinimum(0)
+    rescaler.SetOutputMaximum(255)
+    rescaler.Update()
+    normalized = rescaler.GetOutput()
+
+    cast_filter = itk.CastImageFilter[ImageType, BinaryType].New()
+    cast_filter.SetInput(normalized)
+    cast_filter.Update()
+    normalized = cast_filter.GetOutput()
+
+    segmenter = itk.ConfidenceConnectedImageFilter[BinaryType, BinaryType].New()
+    segmenter.SetInput(normalized)
+    segmenter.SetMultiplier(2.0)
+    segmenter.SetNumberOfIterations(5)
+    segmenter.SetInitialNeighborhoodRadius(3)
+    segmenter.SetReplaceValue(1)
+    for seed in seeds:
+        segmenter.AddSeed(seed)
+    segmenter.Update()
+    segmented = segmenter.GetOutput()
+
+    rescaler_final = itk.RescaleIntensityImageFilter[BinaryType, ImageType].New()
+    rescaler_final.SetInput(segmented)
+    rescaler_final.SetOutputMinimum(0.0)
+    rescaler_final.SetOutputMaximum(1.0)
+    rescaler_final.Update()
+    rescaled_final = rescaler_final.GetOutput()
+
+    return rescaled_final
+ 
 
 register_transform = get_transform_from_file("recallage.tfm")
 image_registered = resample_image(image_gre1, image_gre2, register_transform)
@@ -158,8 +200,10 @@ renderer_fixed = itk_image_to_vtk(image_gre1, 0.0, 0.0, 0.33, 1.0)
 renderer_moving = itk_image_to_vtk(image_gre2, 0.33, 0.0, 0.66, 1.0)
 renderer_registered = itk_image_to_vtk(image_registered, 0.66, 0.0, 1.0, 1.0)
 
-segmentation = tumor_segmentation(image_gre2, seed=(93, 72, 71))
-itk.imwrite(segmentation, 'brain_segmentation.nrrd')
+segmentation_gre1 = tumor_segmentation(image_gre2, seeds=[(93, 74, 68), (124, 99, 80), (115, 60, 77)])
+itk.imwrite(segmentation_gre1, 'brain_segmentation_gr1.nrrd')
+segmentation_gre2 = tumor_segmentation(image_gre2, seeds=[(90, 67, 73), (112, 102, 78), (96, 77, 61)])
+itk.imwrite(segmentation_gre2, 'brain_segmentation_gr2.nrrd')
 
 renderWindow = vtk.vtkRenderWindow()
 renderWindow.AddRenderer(renderer_fixed)
