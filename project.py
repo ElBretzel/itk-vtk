@@ -139,12 +139,27 @@ def get_transform_from_file(file_name: str) -> TransformType:
     
     return register_transform
 
+def tumor_segmentation(image: ImageType, seed: tuple) -> ImageType:
+    segmentation = itk.confidence_connected_image_filter(
+            image,
+            seed=seed,
+            multiplier=2.5,
+            number_of_iterations=5,
+            initial_neighborhood_radius=1,
+            replace_value=1
+        )
+    return segmentation
+
+
 register_transform = get_transform_from_file("recallage.tfm")
 image_registered = resample_image(image_gre1, image_gre2, register_transform)
 
 renderer_fixed = itk_image_to_vtk(image_gre1, 0.0, 0.0, 0.33, 1.0)
 renderer_moving = itk_image_to_vtk(image_gre2, 0.33, 0.0, 0.66, 1.0)
 renderer_registered = itk_image_to_vtk(image_registered, 0.66, 0.0, 1.0, 1.0)
+
+segmentation = tumor_segmentation(image_gre2, seed=(93, 72, 71))
+itk.imwrite(segmentation, 'brain_segmentation.nrrd')
 
 renderWindow = vtk.vtkRenderWindow()
 renderWindow.AddRenderer(renderer_fixed)
