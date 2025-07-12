@@ -160,8 +160,12 @@ def get_transform_from_file(
     return register_transform
 
 
-def better_visualization(image: ImageType) -> ImageType:
-    print("a")
+def better_visualization(image: ImageType, file_name: str) -> ImageType:
+
+    if os.path.exists(file_name):
+        image = itk.imread(file_name)
+        return image
+
     BinaryType = itk.Image[itk.UC, 3]
     thresh_filter = itk.BinaryThresholdImageFilter[ImageType, BinaryType].New()
     thresh_filter.SetInput(image)
@@ -172,21 +176,23 @@ def better_visualization(image: ImageType) -> ImageType:
     thresh_filter.Update()
 
     mask = thresh_filter.GetOutput()
-    print("b")
 
     corrector = itk.N4BiasFieldCorrectionImageFilter[
         ImageType, BinaryType, ImageType
     ].New()
     corrector.SetInput(image)
     corrector.SetMaskImage(mask)
+
+    corrector.SetMaximumNumberOfIterations([50, 50, 30, 20])
+    corrector.SetConvergenceThreshold(1e-4)
+    corrector.SetNumberOfFittingLevels(4)
+
     corrector.Update()
     corrected = corrector.GetOutput()
-    print("c")
 
     smoothed = itk.curvature_flow_image_filter(
         corrected, time_step=0.125, number_of_iterations=5
     )
-    print("d")
 
     rescaler = itk.RescaleIntensityImageFilter[ImageType, ImageType].New()
     rescaler.SetInput(smoothed)
@@ -194,7 +200,8 @@ def better_visualization(image: ImageType) -> ImageType:
     rescaler.SetOutputMaximum(255)
     rescaler.Update()
     normalized = rescaler.GetOutput()
-    print("e")
+
+    itk.imwrite(normalized, file_name)
 
     return normalized
 
@@ -237,10 +244,8 @@ def tumor_segmentation(normalized_image: ImageType, seeds: list[tuple]) -> Image
     return rescaled_final
 
 
-print("1")
-normalized_gre1 = better_visualization(image_gre1)
-print("2")
-normalized_gre2 = better_visualization(image_gre2)
+normalized_gre1 = better_visualization(image_gre1, "gre1_normalized.nrrd")
+normalized_gre2 = better_visualization(image_gre2, "gre2_normalized.nrrd")
 # segmentation_gre1 = tumor_segmentation(
 #     normalized_gre1, seeds=[(93, 74, 68), (124, 99, 80), (115, 60, 77)]
 # )
