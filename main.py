@@ -1,6 +1,7 @@
 import os
 import itk
 import vtk
+import numpy as np
 
 PATH = "Data/"
 
@@ -14,6 +15,11 @@ def load_image(file_name: str) -> ImageType:
     ifr.Update()
     return ifr.GetOutput()
 
+def load_image_root(file_name: str) -> ImageType:
+    ifr = itk.ImageFileReader[ImageType].New()
+    ifr.SetFileName(file_name)
+    ifr.Update()
+    return ifr.GetOutput()
 
 image_gre1 = load_image("case6_gre1.nrrd")
 dim_gre1 = image_gre1.GetImageDimension()
@@ -243,19 +249,143 @@ def tumor_segmentation(normalized_image: ImageType, seeds: list[tuple]) -> Image
 
     return rescaled_final
 
+# FIX ces parties
+if False:
+    normalized_gre1 = better_visualization(image_gre1, "gre1_normalized.nrrd") # Good
+    normalized_gre2 = better_visualization(image_gre2, "gre2_normalized.nrrd") # Normalisation n'est pas bonne sur lui
 
-normalized_gre1 = better_visualization(image_gre1, "gre1_normalized.nrrd")
-normalized_gre2 = better_visualization(image_gre2, "gre2_normalized.nrrd")
-# segmentation_gre1 = tumor_segmentation(
-#     normalized_gre1, seeds=[(93, 74, 68), (124, 99, 80), (115, 60, 77)]
-# )
-# itk.imwrite(segmentation_gre1, "brain_segmentation_gr1.nrrd")
-# segmentation_gre2 = tumor_segmentation(
-#     normalized_gre2, seeds=[(90, 67, 73), (112, 102, 78), (96, 77, 61)]
-# )
-# itk.imwrite(segmentation_gre2, "brain_segmentation_gr2.nrrd")
+    register_transform = get_transform_from_file(
+        "recallage.tfm", normalized_gre1, normalized_gre2 # Il faut possiblement regénérer recallage une fois normalized_gre2 fixed
+    )
+    normalized_gre2_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
+    itk.imwrite(normalized_gre2_registered, "registered_gre2_normalized.nrrd") # Pour voir si le recalage est good
 
-register_transform = get_transform_from_file(
+    segmentation_gre1 = tumor_segmentation(
+        normalized_gre1, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84)]
+    )
+    itk.imwrite(segmentation_gre1, "seg1.nrrd")
+    segmentation_gre2 = tumor_segmentation(
+        normalized_gre2_registered, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84)]
+    )
+    itk.imwrite(segmentation_gre2, "seg2.nrrd")
+
+seg1 = load_image_root("brain_segmentation_gr1.nrrd") # seg1.nrrd une fois fix au-dessus
+seg2 = load_image_root("brain_segmentation_gr2.nrrd") # seg2.nrrd une fois fix au-dessus
+
+def compute_volume(seg, spacing):
+    voxel_volume = spacing[0] * spacing[1] * spacing[2]
+    seg_array = itk.GetArrayFromImage(seg)
+    tumor_voxels = (seg_array == 1).sum()
+    return tumor_voxels * voxel_volume
+
+spacing = seg1.GetSpacing()
+vol1 = compute_volume(seg1, spacing)
+vol2 = compute_volume(seg2, spacing)
+diff = abs(vol1 - vol2)
+print(f"Volume tumeur 1: {vol1:.2f} mm³")
+print(f"Volume tumeur 2: {vol2:.2f} mm³")
+print(f"Changement de volume: {diff:.2f} mm³")
+
+a = itk.GetArrayFromImage(seg1)
+b = itk.GetArrayFromImage(seg2)
+
+intersection = np.logical_and(a, b).sum()
+union = np.logical_or(a, b).sum()
+dice = 2. * intersection / (a.sum() + b.sum())
+print(f"Dice coefficient: {dice:.4f}")
+
+growth = np.logical_and(b == 1, a == 0).sum()
+shrink = np.logical_and(a == 1, b == 0).sum()
+print(f"Voxels nouvellement apparus: {growth}")
+print(f"Voxels disparus: {shrink}")
+
+diff_array = np.zeros_like(a, dtype=np.uint8)
+diff_array[np.logical_and(a == 1, b == 1)] = 1  # intersection
+diff_array[np.logical_and(a == 0, b == 1)] = 2  # croissance
+diff_array[np.logical_and(a == 1, b == 0)] = 3  # régression
+
+diff_image = itk.GetImageFromArray(diff_array)
+diff_image.SetSpacing(seg1.GetSpacing())
+diff_image.SetOrigin(seg1.GetOrigin())
+diff_image.SetDirection(seg1.GetDirection())
+
+import vtkmodules.all as vtk
+
+def vtk_visualize_with_background(label_image, background_image):
+    from itk import vtk_image_from_image
+
+    print("Seg1 origin:", seg1.GetOrigin())
+    print("Background origin:", background_image.GetOrigin())
+
+    print("Seg1 direction:", seg1.GetDirection())
+    print("Background direction:", background_image.GetDirection())
+
+    # Convert label and background to VTK
+    vtk_labels = vtk_image_from_image(label_image)
+    vtk_bg = vtk_image_from_image(background_image)
+
+    # Isosurface for labels
+    contour = vtk.vtkDiscreteMarchingCubes()
+    contour.SetInputData(vtk_labels)
+    contour.GenerateValues(3, 1, 3)
+    contour.Update()
+
+    mapper_labels = vtk.vtkPolyDataMapper()
+    mapper_labels.SetInputConnection(contour.GetOutputPort())
+    mapper_labels.ScalarVisibilityOn()
+    mapper_labels.SetScalarRange(1, 3)
+
+    actor_labels = vtk.vtkActor()
+    actor_labels.SetMapper(mapper_labels)
+
+    # Background volume rendering (semi-transparent)
+    bg_mapper = vtk.vtkSmartVolumeMapper()
+    bg_mapper.SetInputData(vtk_bg)
+
+    opacity_function = vtk.vtkPiecewiseFunction()
+    opacity_function.AddPoint(np.min(itk.GetArrayFromImage(background_image)), 0.0)
+    opacity_function.AddPoint(np.max(itk.GetArrayFromImage(background_image)), 0.15)
+
+    color_function = vtk.vtkColorTransferFunction()
+    color_function.AddRGBPoint(0,    0.0, 0.0, 0.0)   # noir
+    color_function.AddRGBPoint(50,   0.2, 0.2, 0.2)
+    color_function.AddRGBPoint(100,  0.4, 0.4, 0.4)
+    color_function.AddRGBPoint(150,  0.6, 0.6, 0.6)
+    color_function.AddRGBPoint(200,  0.8, 0.8, 0.8)
+    color_function.AddRGBPoint(255,  1.0, 1.0, 1.0)   # blanc
+
+    volume_property = vtk.vtkVolumeProperty()
+    volume_property.SetColor(color_function)
+    volume_property.SetScalarOpacity(opacity_function)
+    volume_property.ShadeOff()
+    volume_property.SetInterpolationTypeToLinear()
+
+    bg_volume = vtk.vtkVolume()
+    bg_volume.SetMapper(bg_mapper)
+    bg_volume.SetProperty(volume_property)
+
+    # Renderer setup
+    renderer = vtk.vtkRenderer()
+    renderer.AddActor(actor_labels)
+    renderer.AddVolume(bg_volume)
+    renderer.SetBackground(1, 1, 1)
+
+    window = vtk.vtkRenderWindow()
+    window.AddRenderer(renderer)
+
+    interactor = vtk.vtkRenderWindowInteractor()
+    interactor.SetRenderWindow(window)
+    window.Render()
+    interactor.Start()
+
+diff_image.SetOrigin(image_gre1.GetOrigin())
+diff_image.SetSpacing(image_gre1.GetSpacing())
+diff_image.SetDirection(image_gre1.GetDirection())
+
+vtk_visualize_with_background(diff_image, image_gre1)
+
+
+"""register_transform = get_transform_from_file(
     "recallage.tfm", normalized_gre1, normalized_gre2
 )
 image_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
@@ -279,4 +409,4 @@ interactor.SetInteractorStyle(imageStyle)
 
 interactor.Initialize()
 renderWindow.Render()
-interactor.Start()
+interactor.Start()"""
