@@ -261,26 +261,50 @@ if True:
     normalized_gre1 = better_visualization(image_gre1, "tmp_norm1.nrrd") # Good
     normalized_gre2 = better_visualization(image_gre2, "tmp_norm2.nrrd") # Normalisation n'est pas bonne sur lui
 
+    NormalizedType = itk.Image[itk.UC, 3]
+    cast_filter = itk.CastImageFilter[NormalizedType, ImageType].New()
+    cast_filter.SetInput(normalized_gre1)
+    cast_filter.Update()
+    normalized_gre1 = cast_filter.GetOutput()
+    
+    cast_filter = itk.CastImageFilter[NormalizedType, ImageType].New()
+    cast_filter.SetInput(normalized_gre2)
+    cast_filter.Update()
+    normalized_gre2 = cast_filter.GetOutput()
+
     print("Recallage")
     register_transform = get_transform_from_file(
         "recallage2.tfm", normalized_gre1, normalized_gre2 # Il faut possiblement regénérer recallage une fois normalized_gre2 fixed
     )
     normalized_gre2_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
-    itk.imwrite(normalized_gre2_registered, "registered_gre2_normalized.nrrd") # Pour voir si le recalage est good
+    
+    arr = itk.GetArrayFromImage(normalized_gre2_registered)
+    arr = np.clip(arr, np.percentile(arr, 1), np.percentile(arr, 99))
+    arr = ((arr - arr.min()) / (arr.max() - arr.min())) * 255
+    arr = arr.astype(np.uint8)
+    image_rescaled = itk.GetImageFromArray(arr)
+    image_rescaled.CopyInformation(normalized_gre2_registered)
+    
+    RescaledType = type(image_rescaled)
+    cast_filter = itk.CastImageFilter[RescaledType, ImageType].New()
+    cast_filter.SetInput(image_rescaled)
+    cast_filter.Update()
+    image_rescaled = cast_filter.GetOutput()
+    itk.imwrite(image_rescaled, "registered_gre2_normalized.nrrd") # Pour voir si le recalage est good
 
     print("Segmentation img 1")
     segmentation_gre1 = tumor_segmentation(
-        normalized_gre1, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84)]
+        normalized_gre1, seeds=[(103, 65, 69), (154, 83, 68), (112, 83, 84), (150, 80, 108)]
     )
     itk.imwrite(segmentation_gre1, "seg1.nrrd")
     print("Segmentation img 2")
     segmentation_gre2 = tumor_segmentation(
-        normalized_gre2_registered, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84)]
+        image_rescaled, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84), (150, 80, 108)]
     )
     itk.imwrite(segmentation_gre2, "seg2.nrrd")
 
-seg1 = load_image_root("brain_segmentation_gr1.nrrd") # seg1.nrrd une fois fix au-dessus
-seg2 = load_image_root("brain_segmentation_gr2.nrrd") # seg2.nrrd une fois fix au-dessus
+seg1 = load_image_root("seg1.nrrd") # seg1.nrrd une fois fix au-dessus
+seg2 = load_image_root("seg2.nrrd") # seg2.nrrd une fois fix au-dessus
 
 def compute_volume(seg, spacing):
     voxel_volume = spacing[0] * spacing[1] * spacing[2]
