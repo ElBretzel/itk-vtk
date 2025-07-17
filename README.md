@@ -13,10 +13,50 @@ Création d'une fonction simple pour ouvrir nos 2 images.
 
 ## 2) Recalage d'images
 
+### Interpolation et transformée
+
+Nous avons étudié plusieurs types de transformations et d'interpolations afin de sélectionner celles qui nous paraissent intéressantes dans notre cas et de les implémenter.
+
+1. **Rigide**
+- Conserve les distances et angles entre les points
+- Utilise rotation et translation
+- **(+)** : Simple et utile quand la forme d'un objet est la même
+- **(-)** : Pas utile pour objets qui se déforment, précision faible
+
+2. **Affine**
+- Linéaire
+- Utilise plus que rotation et translation
+- **(+)** : Plus pratique pour différences d'échelles et de taille entre 2 fichiers
+- **(-)** : Peut se tromper avec des mauvais paramètres donc fausse le résultat
+
+3. **B-Spline**
+- Pour modéliser les déformations plus complexes (mouvements)
+- **(+)** : Plus de précision et plus adapté au sujet
+- **(-)** : Assez lent et couteux en mémoire
+
+Nous avons choisi de partir sur une interpolation B-Spline car c'est celle qui nous permet d'afficher le plus précisement possible la différence de position de la tumeur entre nos 2 fichiers.
+
+Pour la transformée, le choix a été plus compliqué. Comme nous n'avons que 2 fichiers à notre disposition et que nous utilisons nos ordinateurs personnels, nous avons décidé d'utiliser une transformation rigide, qui est alors plus simple et moins couteuse en temps et en mémoire, tout en restant une option valide. Le manque d'informations de la transformée rigide est en partie compensée par l'utilisation de l'interpolation B-Spline, tout en ayant une bonne qualité visuelle finale.
+
+### Métrique
+
+Pour la métrique du recalage, nous nous sommes intéressé à la méthode **Mutual Information de Mattes**.
+- **(+)** : Bien adaptée pour images médicales, robuste à des différences d'intensité
+- **(-)** : Sensible au bruit, assez couteuse
+
+
+### Optimiseur
+
+Pour l'optimiseur du recalage, nous nous sommes intéressé à la méthode de la **descente de gradient à pas régulier**.
+- **(+)** : Compatible avec notre métrique, plus simple et stable
+- **(-)** : Convergence lente ou divergence selon le pas
+
+
+
 ### Algorithme choisi
 - **Type de transformation** : Rigide (conservation des distances et angles)
-- **Métrique de similarité** : Mutual Information de Mattes 
-- **Optimiseur** : Descente de gradient à pas régulier 
+- **Métrique de similarité** : Mutual Information de Mattes
+- **Optimiseur** : Descente de gradient à pas régulier
 
 ### Paramètres choisis
 ```python
@@ -31,7 +71,15 @@ optimizer.SetGradientMagnitudeTolerance(1e-4)  # Tolérance sur le gradient
 
 ## 3) Segmentation des tumeurs
 
-### Algorithme
+Pour la segmentation, nous avons choisi parmi plusieurs implémentations, automatiques ou semi-automatiques (Kmeans, SVM, Watershed, ...), la méthode de **ConfidenceConnected**.
+
+Cette méthode permet de faire une segmentation semi-automatique qui trouve notre région d'intérêt depuis un ou plusieurs points initiaux et qui utilise les voxels proches d'un seed fixé.
+
+- **(+)** : Simple et rapide, efficace pour régions homogènes (comme tumeurs)
+- **(-)** : Faire un bon choix de seed, mauvais pour structures complexes
+
+
+### Algorithme choisi
 - **Méthode Principale** : Croissance des régions
 - **Post-traitement** : Opérations morphologiques
 
@@ -50,7 +98,8 @@ rayon = 1  # Taille de l'élément structurant
 ## 4) Analyse et visualisation des changements
 
 ### Visualisation choisie
-Visualisation en 3D
+
+Nous avons décidé d'utiliser une visualisation 3D de notre résultat final car cela donne un rendu intéractif. Il est alors plus pratique de visualiser, pour n'importe qui, la position exacte de la tumeur et nous pouvons aussi ajouter des couleurs qui nous donne des informations supplémentaires.
 
 Code couleur :
 - **Blanc** : Le fond et les parties identiques dans les 2 images
