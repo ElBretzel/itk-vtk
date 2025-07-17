@@ -221,13 +221,13 @@ def better_visualization(image: ImageType, file_name: str) -> ImageType:
 
 def tumor_segmentation(normalized_image: ImageType, seeds: list[tuple]) -> ImageType:
     BinaryType = itk.Image[itk.UC, 3]
-    cast_filter = itk.CastImageFilter[ImageType, BinaryType].New()
+    """cast_filter = itk.CastImageFilter[ImageType, BinaryType].New()
     cast_filter.SetInput(normalized_image)
     cast_filter.Update()
-    normalized = cast_filter.GetOutput()
+    normalized = cast_filter.GetOutput()"""
 
-    segmenter = itk.ConfidenceConnectedImageFilter[BinaryType, BinaryType].New()
-    segmenter.SetInput(normalized)
+    segmenter = itk.ConfidenceConnectedImageFilter[ImageType, BinaryType].New()
+    segmenter.SetInput(normalized_image)
     segmenter.SetMultiplier(2.0)
     segmenter.SetNumberOfIterations(5)
     segmenter.SetInitialNeighborhoodRadius(3)
@@ -285,6 +285,7 @@ if True:
     image_rescaled = itk.GetImageFromArray(arr)
     image_rescaled.CopyInformation(normalized_gre2_registered)
     
+    itk.imwrite(image_rescaled, "before.nrrd") # Pour voir si le recalage est good
     RescaledType = type(image_rescaled)
     cast_filter = itk.CastImageFilter[RescaledType, ImageType].New()
     cast_filter.SetInput(image_rescaled)
@@ -294,12 +295,12 @@ if True:
 
     print("Segmentation img 1")
     segmentation_gre1 = tumor_segmentation(
-        normalized_gre1, seeds=[(103, 65, 69), (154, 83, 68), (112, 83, 84), (150, 80, 108)]
+        normalized_gre1, seeds=[(86, 66, 52), (124, 63, 78)] # , (99, 78, 83)
     )
     itk.imwrite(segmentation_gre1, "seg1.nrrd")
     print("Segmentation img 2")
     segmentation_gre2 = tumor_segmentation(
-        image_rescaled, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84), (150, 80, 108)]
+        image_rescaled, seeds=[(86, 66, 52), (124, 63, 78)] # , (98, 78, 83)
     )
     itk.imwrite(segmentation_gre2, "seg2.nrrd")
 
