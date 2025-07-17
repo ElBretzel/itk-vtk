@@ -200,12 +200,19 @@ def better_visualization(image: ImageType, file_name: str) -> ImageType:
         corrected, time_step=0.125, number_of_iterations=5
     )
 
-    rescaler = itk.RescaleIntensityImageFilter[ImageType, ImageType].New()
-    rescaler.SetInput(smoothed)
-    rescaler.SetOutputMinimum(0)
-    rescaler.SetOutputMaximum(255)
-    rescaler.Update()
-    normalized = rescaler.GetOutput()
+    arr = itk.GetArrayFromImage(smoothed)
+    lower = np.percentile(arr, 1)
+    upper = np.percentile(arr, 99)
+
+    # Clamp, then rescale
+    arr = np.clip(arr, lower, upper)
+    arr = ((arr - lower) / (upper - lower)) * 255.0
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+    normalized = itk.GetImageFromArray(arr)
+    normalized.CopyInformation(smoothed)
+
+    print("Writing file")
 
     itk.imwrite(normalized, file_name)
 
@@ -250,20 +257,23 @@ def tumor_segmentation(normalized_image: ImageType, seeds: list[tuple]) -> Image
     return rescaled_final
 
 # FIX ces parties
-if False:
-    normalized_gre1 = better_visualization(image_gre1, "gre1_normalized.nrrd") # Good
-    normalized_gre2 = better_visualization(image_gre2, "gre2_normalized.nrrd") # Normalisation n'est pas bonne sur lui
+if True:
+    normalized_gre1 = better_visualization(image_gre1, "tmp_norm1.nrrd") # Good
+    normalized_gre2 = better_visualization(image_gre2, "tmp_norm2.nrrd") # Normalisation n'est pas bonne sur lui
 
+    print("Recallage")
     register_transform = get_transform_from_file(
-        "recallage.tfm", normalized_gre1, normalized_gre2 # Il faut possiblement regénérer recallage une fois normalized_gre2 fixed
+        "recallage2.tfm", normalized_gre1, normalized_gre2 # Il faut possiblement regénérer recallage une fois normalized_gre2 fixed
     )
     normalized_gre2_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
     itk.imwrite(normalized_gre2_registered, "registered_gre2_normalized.nrrd") # Pour voir si le recalage est good
 
+    print("Segmentation img 1")
     segmentation_gre1 = tumor_segmentation(
         normalized_gre1, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84)]
     )
     itk.imwrite(segmentation_gre1, "seg1.nrrd")
+    print("Segmentation img 2")
     segmentation_gre2 = tumor_segmentation(
         normalized_gre2_registered, seeds=[(90, 65, 69), (154, 83, 68), (112, 83, 84)]
     )
