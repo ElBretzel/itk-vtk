@@ -2,6 +2,7 @@ import os
 import itk
 import vtk
 import numpy as np
+from itk import vtk_image_from_image
 
 PATH = "Data/"
 
@@ -20,15 +21,6 @@ def load_image_root(file_name: str) -> ImageType:
     ifr.SetFileName(file_name)
     ifr.Update()
     return ifr.GetOutput()
-
-image_gre1 = load_image("case6_gre1.nrrd")
-dim_gre1 = image_gre1.GetImageDimension()
-width_gre1, height_gre1, depth_gre1 = image_gre1.GetLargestPossibleRegion().GetSize()
-
-image_gre2 = load_image("case6_gre2.nrrd")
-dim_gre2 = image_gre2.GetImageDimension()
-width_gre2, height_gre2, depth_gre2 = image_gre2.GetLargestPossibleRegion().GetSize()
-
 
 def itk_image_to_vtk(
     image: ImageType,
@@ -56,7 +48,6 @@ def itk_image_to_vtk(
     renderer.ResetCamera()
 
     return renderer
-
 
 def register_itk_image(fixed_image: ImageType, moving_image: ImageType) -> ImageType:
 
@@ -114,7 +105,6 @@ def register_itk_image(fixed_image: ImageType, moving_image: ImageType) -> Image
 
     return final_transform
 
-
 def resample_image(
     fixed_image: ImageType, moving_image: ImageType, transform: TransformType
 ) -> ImageType:
@@ -134,7 +124,6 @@ def resample_image(
 
     resample_filter.Update()
     return resample_filter.GetOutput()
-
 
 def get_transform_from_file(
     file_name: str, image_gre1: ImageType, image_gre2: ImageType
@@ -164,7 +153,6 @@ def get_transform_from_file(
         writer.Update()
 
     return register_transform
-
 
 def better_visualization(image: ImageType, file_name: str) -> ImageType:
 
@@ -256,56 +244,58 @@ def tumor_segmentation(normalized_image: ImageType, seeds: list[tuple]) -> Image
 
     return rescaled_final
 
-# FIX ces parties
-if True:
-    normalized_gre1 = better_visualization(image_gre1, "tmp_norm1.nrrd") # Good
-    normalized_gre2 = better_visualization(image_gre2, "tmp_norm2.nrrd") # Normalisation n'est pas bonne sur lui
+image_gre1 = load_image("case6_gre1.nrrd")
+dim_gre1 = image_gre1.GetImageDimension()
+width_gre1, height_gre1, depth_gre1 = image_gre1.GetLargestPossibleRegion().GetSize()
 
-    NormalizedType = itk.Image[itk.UC, 3]
-    cast_filter = itk.CastImageFilter[NormalizedType, ImageType].New()
-    cast_filter.SetInput(normalized_gre1)
-    cast_filter.Update()
-    normalized_gre1 = cast_filter.GetOutput()
-    
-    cast_filter = itk.CastImageFilter[NormalizedType, ImageType].New()
-    cast_filter.SetInput(normalized_gre2)
-    cast_filter.Update()
-    normalized_gre2 = cast_filter.GetOutput()
+image_gre2 = load_image("case6_gre2.nrrd")
+dim_gre2 = image_gre2.GetImageDimension()
+width_gre2, height_gre2, depth_gre2 = image_gre2.GetLargestPossibleRegion().GetSize()
 
-    print("Recallage")
-    register_transform = get_transform_from_file(
-        "recallage2.tfm", normalized_gre1, normalized_gre2 # Il faut possiblement regénérer recallage une fois normalized_gre2 fixed
-    )
-    normalized_gre2_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
-    
-    arr = itk.GetArrayFromImage(normalized_gre2_registered)
-    arr = np.clip(arr, np.percentile(arr, 1), np.percentile(arr, 99))
-    arr = ((arr - arr.min()) / (arr.max() - arr.min())) * 255
-    arr = arr.astype(np.uint8)
-    image_rescaled = itk.GetImageFromArray(arr)
-    image_rescaled.CopyInformation(normalized_gre2_registered)
-    
-    itk.imwrite(image_rescaled, "before.nrrd") # Pour voir si le recalage est good
-    RescaledType = type(image_rescaled)
-    cast_filter = itk.CastImageFilter[RescaledType, ImageType].New()
-    cast_filter.SetInput(image_rescaled)
-    cast_filter.Update()
-    image_rescaled = cast_filter.GetOutput()
-    itk.imwrite(image_rescaled, "registered_gre2_normalized.nrrd") # Pour voir si le recalage est good
+normalized_gre1 = better_visualization(image_gre1, "tmp_norm1.nrrd")
+normalized_gre2 = better_visualization(image_gre2, "tmp_norm2.nrrd")
 
-    print("Segmentation img 1")
-    segmentation_gre1 = tumor_segmentation(
-        normalized_gre1, seeds=[(86, 66, 52), (124, 63, 78)] # , (99, 78, 83)
-    )
-    itk.imwrite(segmentation_gre1, "seg1.nrrd")
-    print("Segmentation img 2")
-    segmentation_gre2 = tumor_segmentation(
-        image_rescaled, seeds=[(86, 66, 52), (124, 63, 78)] # , (98, 78, 83)
-    )
-    itk.imwrite(segmentation_gre2, "seg2.nrrd")
+NormalizedType = itk.Image[itk.UC, 3]
+cast_filter = itk.CastImageFilter[NormalizedType, ImageType].New()
+cast_filter.SetInput(normalized_gre1)
+cast_filter.Update()
+normalized_gre1 = cast_filter.GetOutput()
 
-seg1 = load_image_root("seg1.nrrd") # seg1.nrrd une fois fix au-dessus
-seg2 = load_image_root("seg2.nrrd") # seg2.nrrd une fois fix au-dessus
+cast_filter = itk.CastImageFilter[NormalizedType, ImageType].New()
+cast_filter.SetInput(normalized_gre2)
+cast_filter.Update()
+normalized_gre2 = cast_filter.GetOutput()
+
+print("Recallage")
+register_transform = get_transform_from_file(
+    "recallage2.tfm", normalized_gre1, normalized_gre2
+)
+normalized_gre2_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
+
+arr = itk.GetArrayFromImage(normalized_gre2_registered)
+arr = np.clip(arr, np.percentile(arr, 1), np.percentile(arr, 99))
+arr = ((arr - arr.min()) / (arr.max() - arr.min())) * 255
+arr = arr.astype(np.uint8)
+image_rescaled = itk.GetImageFromArray(arr)
+image_rescaled.CopyInformation(normalized_gre2_registered)
+
+itk.imwrite(image_rescaled, "registered_gre2_normalized.nrrd")
+RescaledType = type(image_rescaled)
+cast_filter = itk.CastImageFilter[RescaledType, ImageType].New()
+cast_filter.SetInput(image_rescaled)
+cast_filter.Update()
+image_rescaled = cast_filter.GetOutput()
+
+print("Segmentation img 1")
+seg1 = tumor_segmentation(
+    normalized_gre1, seeds=[(86, 66, 52), (124, 63, 78)] # , (99, 78, 83)
+)
+itk.imwrite(seg1, "seg1.nrrd")
+print("Segmentation img 2")
+seg2 = tumor_segmentation(
+    image_rescaled, seeds=[(86, 66, 52), (124, 63, 78)] # , (98, 78, 83)
+)
+itk.imwrite(seg2, "seg2.nrrd")
 
 def compute_volume(seg, spacing):
     voxel_volume = spacing[0] * spacing[1] * spacing[2]
@@ -316,7 +306,7 @@ def compute_volume(seg, spacing):
 spacing = seg1.GetSpacing()
 vol1 = compute_volume(seg1, spacing)
 vol2 = compute_volume(seg2, spacing)
-diff = abs(vol1 - vol2)
+diff = vol2 - vol1
 print(f"Volume tumeur 1: {vol1:.2f} mm³")
 print(f"Volume tumeur 2: {vol2:.2f} mm³")
 print(f"Changement de volume: {diff:.2f} mm³")
@@ -344,104 +334,88 @@ diff_image.SetSpacing(seg1.GetSpacing())
 diff_image.SetOrigin(seg1.GetOrigin())
 diff_image.SetDirection(seg1.GetDirection())
 
-import vtkmodules.all as vtk
-
-def vtk_visualize_with_background(label_image, background_image):
-    from itk import vtk_image_from_image
-
-    print("Seg1 origin:", seg1.GetOrigin())
-    print("Background origin:", background_image.GetOrigin())
-
-    print("Seg1 direction:", seg1.GetDirection())
-    print("Background direction:", background_image.GetDirection())
-
-    # Convert label and background to VTK
-    vtk_labels = vtk_image_from_image(label_image)
-    vtk_bg = vtk_image_from_image(background_image)
-
-    # Isosurface for labels
-    contour = vtk.vtkDiscreteMarchingCubes()
-    contour.SetInputData(vtk_labels)
-    contour.GenerateValues(3, 1, 3)
-    contour.Update()
-
-    mapper_labels = vtk.vtkPolyDataMapper()
-    mapper_labels.SetInputConnection(contour.GetOutputPort())
-    mapper_labels.ScalarVisibilityOn()
-    mapper_labels.SetScalarRange(1, 3)
-
-    actor_labels = vtk.vtkActor()
-    actor_labels.SetMapper(mapper_labels)
-
-    # Background volume rendering (semi-transparent)
-    bg_mapper = vtk.vtkSmartVolumeMapper()
-    bg_mapper.SetInputData(vtk_bg)
-
-    opacity_function = vtk.vtkPiecewiseFunction()
-    opacity_function.AddPoint(np.min(itk.GetArrayFromImage(background_image)), 0.0)
-    opacity_function.AddPoint(np.max(itk.GetArrayFromImage(background_image)), 0.15)
-
-    color_function = vtk.vtkColorTransferFunction()
-    color_function.AddRGBPoint(0,    0.0, 0.0, 0.0)   # noir
-    color_function.AddRGBPoint(50,   0.2, 0.2, 0.2)
-    color_function.AddRGBPoint(100,  0.4, 0.4, 0.4)
-    color_function.AddRGBPoint(150,  0.6, 0.6, 0.6)
-    color_function.AddRGBPoint(200,  0.8, 0.8, 0.8)
-    color_function.AddRGBPoint(255,  1.0, 1.0, 1.0)   # blanc
-
-    volume_property = vtk.vtkVolumeProperty()
-    volume_property.SetColor(color_function)
-    volume_property.SetScalarOpacity(opacity_function)
-    volume_property.ShadeOff()
-    volume_property.SetInterpolationTypeToLinear()
-
-    bg_volume = vtk.vtkVolume()
-    bg_volume.SetMapper(bg_mapper)
-    bg_volume.SetProperty(volume_property)
-
-    # Renderer setup
-    renderer = vtk.vtkRenderer()
-    renderer.AddActor(actor_labels)
-    renderer.AddVolume(bg_volume)
-    renderer.SetBackground(1, 1, 1)
-
-    window = vtk.vtkRenderWindow()
-    window.AddRenderer(renderer)
-
-    interactor = vtk.vtkRenderWindowInteractor()
-    interactor.SetRenderWindow(window)
-    window.Render()
-    interactor.Start()
-
 diff_image.SetOrigin(image_gre1.GetOrigin())
 diff_image.SetSpacing(image_gre1.GetSpacing())
 diff_image.SetDirection(image_gre1.GetDirection())
 
-vtk_visualize_with_background(diff_image, image_gre1)
+# Convert label and background to VTK
+vtk_labels = vtk_image_from_image(diff_image)
+vtk_bg = vtk_image_from_image(image_gre1)
 
+# Isosurface for labels
+contour = vtk.vtkDiscreteMarchingCubes()
+contour.SetInputData(vtk_labels)
+contour.GenerateValues(3, 1, 3)
+contour.Update()
 
-"""register_transform = get_transform_from_file(
-    "recallage.tfm", normalized_gre1, normalized_gre2
-)
-image_registered = resample_image(normalized_gre1, normalized_gre2, register_transform)
+mapper_labels = vtk.vtkPolyDataMapper()
+mapper_labels.SetInputConnection(contour.GetOutputPort())
+mapper_labels.ScalarVisibilityOn()
+mapper_labels.SetScalarRange(1, 3)
 
-renderer_fixed = itk_image_to_vtk(normalized_gre1, 0.0, 0.0, 0.33, 1.0)
-renderer_moving = itk_image_to_vtk(normalized_gre2, 0.33, 0.0, 0.66, 1.0)
-renderer_registered = itk_image_to_vtk(image_registered, 0.66, 0.0, 1.0, 1.0)
+actor_labels = vtk.vtkActor()
+actor_labels.SetMapper(mapper_labels)
 
-renderWindow = vtk.vtkRenderWindow()
-renderWindow.AddRenderer(renderer_fixed)
-renderWindow.AddRenderer(renderer_moving)
-renderWindow.AddRenderer(renderer_registered)
-renderWindow.SetSize(800, 400)
+# Background volume rendering (semi-transparent)
+bg_mapper = vtk.vtkSmartVolumeMapper()
+bg_mapper.SetInputData(vtk_bg)
 
-imageStyle = vtk.vtkInteractorStyleImage()
-imageStyle.SetInteractionModeToImageSlicing()
+opacity_function = vtk.vtkPiecewiseFunction()
+opacity_function.AddPoint(np.min(itk.GetArrayFromImage(image_gre1)), 0.0)
+opacity_function.AddPoint(np.max(itk.GetArrayFromImage(image_gre1)), 0.15)
+
+color_function = vtk.vtkColorTransferFunction()
+color_function.AddRGBPoint(0,    0.0, 0.0, 0.0)   # noir
+color_function.AddRGBPoint(50,   0.2, 0.2, 0.2)
+color_function.AddRGBPoint(100,  0.4, 0.4, 0.4)
+color_function.AddRGBPoint(150,  0.6, 0.6, 0.6)
+color_function.AddRGBPoint(200,  0.8, 0.8, 0.8)
+color_function.AddRGBPoint(255,  1.0, 1.0, 1.0)   # blanc
+
+volume_property = vtk.vtkVolumeProperty()
+volume_property.SetColor(color_function)
+volume_property.SetScalarOpacity(opacity_function)
+volume_property.ShadeOff()
+volume_property.SetInterpolationTypeToLinear()
+
+bg_volume = vtk.vtkVolume()
+bg_volume.SetMapper(bg_mapper)
+bg_volume.SetProperty(volume_property)
+
+# Renderer setup
+renderer = vtk.vtkRenderer()
+renderer.AddActor(actor_labels)
+renderer.AddVolume(bg_volume)
+renderer.SetBackground(1, 1, 1)
+
+window = vtk.vtkRenderWindow()
+window.AddRenderer(renderer)
 
 interactor = vtk.vtkRenderWindowInteractor()
-interactor.SetRenderWindow(renderWindow)
-interactor.SetInteractorStyle(imageStyle)
+interactor.SetRenderWindow(window)
 
-interactor.Initialize()
-renderWindow.Render()
-interactor.Start()"""
+txt = f"""
+Intersection : vert
+Croissance : rouge
+Régression : bleu
+
+Volume tumeur 1: {vol1:.2f} mm3
+Volume tumeur 2: {vol2:.2f} mm3
+Changement de volume: {diff:.2f} mm3, {diff/vol1*100:.2f} % d'augmentation
+Dice coefficient: {dice:.4f}
+Voxels nouvellement apparus: {growth}
+Voxels disparus: {shrink}
+"""
+
+# Create a text actor
+text_actor = vtk.vtkTextActor()
+text_actor.SetInput(txt)
+text_actor.GetTextProperty().SetFontSize(24)
+text_actor.GetTextProperty().SetColor(1.0, 0.0, 0.0)
+text_actor.SetDisplayPosition(10, 10)
+
+# Add the actor to the renderer
+renderer.AddActor2D(text_actor)
+
+window.Render()
+interactor.Start()
