@@ -102,13 +102,11 @@ rayon = 1  # Taille de l'élément structurant
 Nous avons décidé d'utiliser une visualisation 3D de notre résultat final car cela donne un rendu intéractif. Il est alors plus pratique de visualiser, pour n'importe qui, la position exacte de la tumeur et nous pouvons aussi ajouter des couleurs qui nous donne des informations supplémentaires.
 
 Code couleur :
-- **Blanc** : Le fond et les parties identiques dans les 2 images
-- **Gris** : Le contour du crane du patient
-- **Rouge** : Les données qui sont dans la première image mais pas la seconde
-- **Bleu** : Les données qui sont dans la seconde image mais pas la première
-```python
-#FIXME Couleurs
-```
+- **Blanc** : Le fond
+- **Gris** : Le scan du cerveau, en semi transparence
+- **Rouge** : Les voxels segmentés qui sont dans la seconde image mais pas la première (croissance)
+- **Bleu** : Les voxels segmentés qui sont dans la première image mais pas la seconde (régression)
+- **Vert** : Les voxels segmentés qui sont dans les deux images (intersection)
 
 Avantages :
 - **Interactif** : On peut déplacer le modèle pour voir tous ces angles
@@ -116,7 +114,3 @@ Avantages :
 
 Limitations :
 - **Intérieur de la tumeur** : Puisque c'est un affichage 3D, on ne peut voir que l'extérieur et ne voit pas les différences qui pourraient être à l'intérieur
-
-```python
-#FIXME A modifier si on change la visualisation
-```
